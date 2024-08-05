@@ -1,5 +1,7 @@
 import os
+import hashlib
 from typing import Optional
+
 
 class FANGS:
     """
@@ -57,3 +59,50 @@ class FANGS:
                 raise
         else:
             print(f'Repository already exists in {self.FANGS_DIR}')
+
+    def hash_object(self, data, obj_type):
+        """
+        Hash and store an object in the FANGS repository.
+
+        Args:
+            data: The content of the object to hash and store (must be bytes).
+            obj_type: The type of the object (e.g., 'blob', 'tree', 'commit').
+
+        Returns:
+            The SHA-1 hash of the object.
+
+        Raises:
+            ValueError: If data is not bytes or obj_type is not a non-empty string.
+            OSError: If there's an error creating directories or writing the file.
+        """
+        # Input validation
+        if not isinstance(data, bytes):
+            raise ValueError("data must be bytes")
+        if not isinstance(obj_type, str) or not obj_type.strip():
+            raise ValueError("obj_type must be a non-empty string")
+
+        # Prepare the object data with header
+        header = f'{obj_type}{len(data)}\0'
+        full_data = header.encode() + data
+
+        # Generate SHA-1 hash
+        sha1 = hashlib.sha1(full_data).hexdigest()
+
+        # Determine the path where the object will be stored
+        # Objects are stored in subdirectories based on the first two characters of their hash
+        path = os.path.join(self.OBJECT_DIR, sha1[:2], sha1[2:])
+
+        try:
+            # Only write the object if it doesn't already exist
+            if not os.path.exists(path):
+                # Create the directory if it doesn't exist
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                # Write the object data to the file
+                with open(path, 'wb') as f:
+                    f.write(full_data)
+        except OSError as e:
+            # Raise a more informative error if file operations fail
+            raise OSError(f"Error writing object to {path}: {e}")
+
+        # Return the SHA-1 hash of the object
+        return sha1
