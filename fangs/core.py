@@ -178,13 +178,3 @@ class FANGS:
             raise OSError(f"Error adding file to index: {e}")
 
     
-        index_file = os.path.join(self.FANGS_DIR, 'index')
-        if not os.path.exist(index_file):
-            print(f'Nothing to commit')
-            return
-        
-        tree = {}
-        with open(index, 'r') as f:
-            for line in f:
-                sha1, path = line.strip().split('', 1)
-
