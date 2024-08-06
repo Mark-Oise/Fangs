@@ -106,3 +106,85 @@ class FANGS:
 
         # Return the SHA-1 hash of the object
         return sha1
+
+    def add(self, file_path):
+        """
+        Add a file to the FANGS index.
+
+        This method reads the content of the specified file, hashes it,
+        and adds an entry to the index file.
+
+        Args:
+            file_path: The path to the file to be added.
+
+        Raises:
+            ValueError: If the file_path is empty or not a string.
+            FileNotFoundError: If the specified file does not exist.
+            OSError: If there's an error reading the file or writing to the index.
+
+        Returns:
+            None
+        """
+        # Validate input
+        if not isinstance(file_path, str) or not file_path.strip():
+            raise ValueError("file_path must be a non-empty string")
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        if not os.path.isfile(file_path):
+            raise ValueError(f"Not a file: {file_path}")
+
+        # Ensure the file is within the repository
+        try:
+            relative_path = os.path.relpath(file_path, self.repo_path)
+            if relative_path.startswith('..'):
+                raise ValueError(f"File is outside the repository: {file_path}")
+        except ValueError as e:
+            raise ValueError(f"Invalid file path: {e}")
+
+        try:
+            # Read the file content
+            with open(file_path, 'rb') as f:
+                data = f.read()
+
+            # Hash the file content
+            sha1 = self.hash_object(data, 'blob')
+
+            # Create the index entry
+            index_entry = f'{sha1} {relative_path}'
+            index_file = os.path.join(self.FANGS_DIR, 'index')
+
+            # Update the index file, replacing existing entries if necessary
+            updated = False
+            temp_index_file = index_file + '.temp'
+            with open(index_file, 'r') as old_f, open(temp_index_file, 'w') as new_f:
+                for line in old_f:
+                    # If the file is already in the index, update its entry
+                    if line.split()[1] == relative_path:
+                        new_f.write(index_entry + '\n')
+                        updated = True
+                    else:
+                        new_f.write(line)
+                # If it's a new file, add it to the end of the index
+                if not updated:
+                    new_f.write(index_entry + '\n')
+
+            # Replace the old index file with the updated one
+            os.replace(temp_index_file, index_file)
+            print(f'Added {relative_path} to index')
+
+        except OSError as e:
+            raise OSError(f"Error adding file to index: {e}")
+
+    
+        index_file = os.path.join(self.FANGS_DIR, 'index')
+        if not os.path.exist(index_file):
+            print(f'Nothing to commit')
+            return
+        
+        tree = {}
+        with open(index, 'r') as f:
+            for line in f:
+                sha1, path = line.strip().split('', 1)
+
