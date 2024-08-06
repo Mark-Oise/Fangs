@@ -222,7 +222,7 @@ class FANGS:
                 'timestamp': datetime.now().isoformat(),
                 'message': message
             }
-            
+
             # Hash the commit data to create a new commit object
             commit_sha1 = self.hash_object(json.dumps(commit_data).encode(), 'commit')
 
@@ -282,3 +282,38 @@ class FANGS:
             # Handle potential file reading errors
             print(f"Error reading reference '{ref}': {e}")
             return None
+
+    def update_ref(self, ref, sha1):
+        """
+        Update a reference to point to a specific commit.
+
+        Args:
+            ref: The name of the reference to update (e.g., 'HEAD', 'refs/heads/master').
+            sha1: The SHA-1 hash of the commit to point to.
+
+        Raises:
+            ValueError: If ref or sha1 is empty or not a string.
+            OSError: If there's an error creating directories or writing to the file.
+        """
+        # Input validation
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError("ref must be a non-empty string")
+        if not isinstance(sha1, str) or not sha1.strip():
+            raise ValueError("sha1 must be a non-empty string")
+
+        # Construct the full path to the reference file
+        ref_file = os.path.join(self.FANGS_DIR, ref)
+
+        try:
+            # Ensure the directory structure exists
+            os.makedirs(os.path.dirname(ref_file), exist_ok=True)
+
+            # Write the SHA-1 hash to the reference file
+            with open(ref_file, 'w') as f:
+                f.write(sha1)
+        except OSError as e:
+            # Handle potential file system errors
+            raise OSError(f"Error updating reference '{ref}': {e}")
+
+        # Optionally, log the update
+        print(f"Updated reference '{ref}' to point to {sha1}")
