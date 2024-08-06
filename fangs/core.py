@@ -1,5 +1,7 @@
 import os
 import hashlib
+from datetime import datetime
+import json
 from typing import Optional
 
 
@@ -177,4 +179,106 @@ class FANGS:
         except OSError as e:
             raise OSError(f"Error adding file to index: {e}")
 
-    
+    def commit(self, message):
+        """
+        Create a new commit with the current index state.
+
+        Args:
+            message (str): The commit message.
+
+        Raises:
+            ValueError: If the message is empty or not a string.
+            OSError: If there's an error reading the index or writing the commit.
+
+        Returns:
+            str: The SHA-1 hash of the new commit.
+        """
+        # Validate input
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("Commit message must be a non-empty string")
+
+        # Check if there's anything to commit
+        index_file = os.path.join(self.FANGS_DIR, 'index')
+        if not os.path.exists(index_file):
+            print("Nothing to commit")
+            return None
+
+        try:
+            # Read the index and create a tree structure
+            tree = {}
+            with open(index_file, 'r') as f:
+                for line in f:
+                    sha1, path = line.strip().split(' ', 1)
+                    tree[path] = sha1
+
+            # Hash the tree structure
+            tree_sha1 = self.hash_object(json.dumps(tree).encode(), 'tree')
+
+            # Prepare commit data
+            commit_data = {
+                'tree': tree_sha1,
+                'parent': self.get_head_commit(),  # Get the current HEAD commit
+                'author': 'Simple Fangs User <user@example.com>',
+                'timestamp': datetime.now().isoformat(),
+                'message': message
+            }
+            
+            # Hash the commit data to create a new commit object
+            commit_sha1 = self.hash_object(json.dumps(commit_data).encode(), 'commit')
+
+            # Update the HEAD reference to point to the new commit
+            self.update_ref('HEAD', commit_sha1)
+
+            print(f"Committed changes: {commit_sha1}")
+            return commit_sha1
+
+        except OSError as e:
+            # Handle file-related errors
+            raise OSError(f"Error creating commit: {e}")
+        except Exception as e:
+            # Catch any other unexpected errors
+            raise RuntimeError(f"Unexpected error during commit: {e}")
+
+    def get_head_commit(self):
+        """
+        Get the current HEAD commit.
+
+        Returns:
+            str or None: The SHA-1 hash of the current HEAD commit, or None if not found.
+        """
+        return self.get_ref('HEAD')
+
+    def get_ref(self, ref):
+        """
+        Get the SHA-1 hash that a reference points to.
+
+        This method resolves references, including symbolic references.
+
+        Args:
+            ref (str): The name of the reference to resolve.
+
+        Returns:
+            str or None: The SHA-1 hash the reference points to, or None if not found.
+
+        Raises:
+            IOError: If there's an error reading the reference file.
+        """
+        ref_file = os.path.join(self.FANGS_DIR, ref)
+        try:
+            if os.path.exists(ref_file):
+                with open(ref_file, 'r') as f:
+                    content = f.read().strip()
+                    # Check if it's a symbolic reference
+                    if content.startswith('ref: '):
+                        # Recursively resolve the symbolic reference
+                        return self.get_ref(content[5:])
+                    # Return the SHA-1 hash
+                    return content
+            else:
+                # Reference file doesn't exist
+                print(f"Warning: Reference '{ref}' not found.")
+                return None
+        except IOError as e:
+            # Handle potential file reading errors
+            print(f"Error reading reference '{ref}': {e}")
+            return None
