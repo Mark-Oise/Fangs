@@ -390,23 +390,82 @@ class FANGS:
         path = os.path.join(self.OBJECT_DIR, sha1[:2], sha1[2:])
         try:
             with open(path, 'rb') as f:
-                raw_data = f.read()
+                obj = f.read()
             
             # Parse the header
-            null_index = raw_data.index(b'\0')
+            null_index = obj.index(b'\0')
             header = raw_data[:null_index].decode()
             obj_type, size = header.split()
+           
             
             if obj_type != expected_type:
                 raise ValueError(f"Expected {expected_type}, got {obj_type}")
             
             # Parse the data based on the object type
-            data = raw_data[null_index + 1:]
+            content = obj[null_index + 1:]
             if obj_type in ('tree', 'commit'):
-                return json.loads(data.decode())
+                return json.loads(content.decode())
             elif obj_type == 'blob':
-                return data
+                return content
             else:
                 raise ValueError(f"Unknown object type: {obj_type}")
         except FileNotFoundError:
             raise FileNotFoundError(f"Object {sha1} not found")
+
+
+    def branch(self, name=None):
+        """
+        Create a new branch or list existing branches.
+
+        If a name is provided, creates a new branch pointing to the current HEAD commit.
+        If no name is provided, lists all existing branches.
+
+        Args:
+            name (str, optional): The name of the new branch to create. Defaults to None.
+
+        Raises:
+            OSError: If there's an error creating the branch or listing branches.
+        """
+        if name:
+            head_commit = self.get_head_commit()
+            if head_commit:
+                try:
+                    # Create a new branch pointing to the current HEAD commit
+                    self.update_ref(f'refs/heads/{name}', head_commit)
+                    print(f'Created branch {name}')
+                except OSError as e:
+                    print(f"Error creating branch: {e}")
+            else:
+                print('Cannot create branch: no commits yet')
+        else:
+            # List existing branches
+            heads_dir = os.path.join(self.REF_DIR, 'heads')
+            try:
+                current_branch = self.get_current_branch()
+                for branch in os.listdir(heads_dir):
+                    # Mark the current branch with an asterisk
+                    current = '*' if current_branch == branch else ' '
+                    print(f'{current} {branch}')
+            except OSError as e:
+                print(f"Error listing branches: {e}")
+
+    def get_current_branch(self):
+        """
+        Get the name of the current branch.
+
+        Returns:
+            str or None: The name of the current branch, or None if not on a branch.
+
+        Raises:
+            IOError: If there's an error reading the HEAD file.
+        """
+        try:
+            with open(self.HEAD_FILE, 'r') as f:
+                content = f.read().strip()
+                # Check if HEAD is pointing to a branch reference
+                if content.startswith('ref: refs/heads/'):
+                    return content[16:]  # Return branch name
+        except IOError as e:
+            print(f"Error reading HEAD file: {e}")
+        return None  # Return None if not on a branch or if there's an error
+
