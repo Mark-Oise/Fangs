@@ -570,6 +570,51 @@ class FANGS:
         else:
             self.three_way_merge(current_commit, other_commit, base_commit, branch_name)
 
+    def find_merge_base(self, commit1, commit2):
+        """
+        Find the most recent common ancestor of two commits.
+
+        Args:
+            commit1 (str): SHA-1 of the first commit.
+            commit2 (str): SHA-1 of the second commit.
+
+        Returns:
+            str: SHA-1 of the merge base commit, or None if not found.
+        """
+        # Get the commit chains for both commits
+        chain1 = self.get_commit_chain(commit1)
+        chain2 = self.get_commit_chain(commit2)
+
+        # Iterate through the first chain to find the first common commit
+        for commit in chain1:
+            if commit in chain2:
+                return commit  # Found the merge base
+
+        # If no common commit is found, return None
+        return None
+
+    def get_commit_chain(self, commit):
+        """
+        Get the chain of commits starting from the given commit.
+
+        Args:
+            commit (str): SHA-1 of the starting commit.
+
+        Returns:
+            list: List of commit SHA-1s in the chain, oldest first.
+        """
+        chain = []
+        current = commit
+
+        # Traverse the commit history
+        while current:
+            chain.append(current)
+            commit_data = self.read_object(current, 'commit')
+            current = commit_data.get('parent')  # Move to the parent commit
+
+        # Reverse the chain to get oldest commit first
+        return list(reversed(chain))
+
     def fast_forward_merge(self, target_commit, branch_name):
         """
         Perform a fast-forward merge to the target commit.
