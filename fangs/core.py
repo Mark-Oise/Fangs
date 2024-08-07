@@ -469,3 +469,44 @@ class FANGS:
             print(f"Error reading HEAD file: {e}")
         return None  # Return None if not on a branch or if there's an error
 
+
+     def checkout(self, branch_name):
+        branch_ref = f'refs/heads/{branch_name}'
+        if not os.path.exists(os.path.join(self.git_dir, branch_ref)):
+            print(f"Branch '{branch_name}' does not exist")
+            return
+        
+        # Update HEAD
+        with open(self.head_file, 'w') as f:
+            f.write(f'ref: {branch_ref}')
+        
+        # Get the commit that the branch points to
+        branch_commit = self.get_ref(branch_ref)
+        
+        # Read the tree from the commit
+        commit_data = self.read_object(branch_commit, 'commit')
+        tree_sha1 = commit_data['tree']
+        tree = self.read_object(tree_sha1, 'tree')
+        
+        # Update working directory
+        self.update_working_directory(tree)
+        
+        print(f"Switched to branch '{branch_name}'")
+
+    def update_working_directory(self, tree):
+        # Remove all files in the working directory except .simplegit
+        for root, dirs, files in os.walk(self.repo_path, topdown=False):
+            if '.simplegit' in dirs:
+                dirs.remove('.simplegit')
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+
+        # Write files from the tree to the working directory
+        for path, sha1 in tree.items():
+            file_path = os.path.join(self.repo_path, path)
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'wb') as f:
+                f.write(self.read_object(sha1, 'blob'))
+        
