@@ -394,7 +394,7 @@ class FANGS:
             
             # Parse the header
             null_index = obj.index(b'\0')
-            header = raw_data[:null_index].decode()
+            header = obj[:null_index].decode()
             obj_type, size = header.split()
            
             
