@@ -317,3 +317,96 @@ class FANGS:
 
         # Optionally, log the update
         print(f"Updated reference '{ref}' to point to {sha1}")
+
+    def log(self, start='HEAD'):
+        """
+        Display the commit history starting from a specified reference.
+
+        This method traverses the commit history, starting from the given reference
+        (defaulting to HEAD), and prints out details of each commit encountered.
+
+        Args:
+            start (str, optional): The reference to start the log from. Defaults to 'HEAD'.
+
+        Prints:
+            For each commit:
+            - The commit hash
+            - The author
+            - The timestamp
+            - The commit message
+
+        Note:
+            If an error occurs while reading a commit, the method will print an error
+            message and stop traversing the history.
+
+        Raises:
+            No exceptions are raised directly, but errors are caught and printed.
+        """
+        try:
+            # Start by getting the commit hash that the 'start' reference points to
+            current = self.get_ref(start)
+            
+            while current:
+                try:
+                    # Attempt to read and parse the commit object
+                    commit_data = self.read_object(current, 'commit')
+                    
+                    # Print commit details
+                    print(f'commit {current}')
+                    print(f"Author: {commit_data.get('author', 'Unknown')}")
+                    print(f"Date: {commit_data.get('timestamp', 'Unknown')}")
+                    print(f"\n    {commit_data.get('message', 'No message')}\n")
+                    
+                    # Move to the parent commit
+                    current = commit_data.get('parent')
+                    
+                    # If there's no parent, we've reached the initial commit
+                    if not current:
+                        break
+                except Exception as e:
+                    # If there's an error reading a commit, print it and stop
+                    print(f"Error reading commit {current}: {e}")
+                    break
+        except Exception as e:
+            # Handle any errors that occur when starting the log
+            print(f"Error starting log from {start}: {e}")
+            
+
+    def read_object(self, sha1, expected_type):
+        """
+        Read an object from the repository.
+
+        Args:
+            sha1 (str): The SHA-1 hash of the object.
+            expected_type (str): The expected type of the object.
+
+        Returns:
+            dict: The object data.
+
+        Raises:
+            ValueError: If the object type doesn't match the expected type.
+            FileNotFoundError: If the object file doesn't exist.
+        """
+        path = os.path.join(self.OBJECT_DIR, sha1[:2], sha1[2:])
+        try:
+            with open(path, 'rb') as f:
+                raw_data = f.read()
+            
+            # Parse the header
+            null_index = raw_data.index(b'\0')
+            header = raw_data[:null_index].decode()
+            obj_type, size = header.split()
+            
+            if obj_type != expected_type:
+                raise ValueError(f"Expected {expected_type}, got {obj_type}")
+            
+            # Parse the data based on the object type
+            data = raw_data[null_index + 1:]
+            if obj_type in ('tree', 'commit'):
+                return json.loads(data.decode())
+            elif obj_type == 'blob':
+                return data
+            else:
+                raise ValueError(f"Unknown object type: {obj_type}")
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Object {sha1} not found")
