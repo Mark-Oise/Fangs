@@ -536,3 +536,158 @@ class FANGS:
             print(f"Error updating working directory: {e}")
             # Consider adding rollback logic here
         
+    def merge(self, branch_name):
+        """
+        Merge the specified branch into the current branch.
+
+        Args:
+            branch_name (str): The name of the branch to merge.
+
+        Raises:
+            ValueError: If not on a branch or if the specified branch doesn't exist.
+        """
+        current_branch = self.get_current_branch()
+        if not current_branch:
+            raise ValueError('Not currently on any branch')
+        
+        current_commit = self.get_head_commit()
+        other_commit = self.get_ref(f'refs/heads/{branch_name}')
+        
+        if not other_commit:
+            raise ValueError(f'Branch {branch_name} does not exist')
+
+        base_commit = self.find_merge_base(current_commit, other_commit)
+
+        if base_commit == other_commit:
+            print('Already up-to-date')
+            return
+        elif base_commit == current_commit:
+            self.fast_forward_merge(other_commit, branch_name)
+        else:
+            self.three_way_merge(current_commit, other_commit, base_commit, branch_name)
+
+    def fast_forward_merge(self, target_commit, branch_name):
+        """
+        Perform a fast-forward merge to the target commit.
+
+        Args:
+            target_commit (str): The SHA-1 of the commit to merge to.
+            branch_name (str): The name of the branch being merged.
+        """
+        self.update_ref('HEAD', target_commit)
+        print(f'Fast-forwarded merge to {branch_name}')
+        self.update_working_directory(self.get_tree(target_commit))
+
+    def three_way_merge(self, current_commit, other_commit, base_commit, branch_name):
+        """
+        Perform a three-way merge between the current branch, the other branch, and their common ancestor.
+
+        Args:
+            current_commit (str): The SHA-1 of the current branch's head commit.
+            other_commit (str): The SHA-1 of the other branch's head commit.
+            base_commit (str): The SHA-1 of the common ancestor commit.
+            branch_name (str): The name of the branch being merged.
+        """
+        base_tree = self.get_tree(base_commit)
+        current_tree = self.get_tree(current_commit)
+        other_tree = self.get_tree(other_commit)
+
+        merged_tree = {}
+        conflicts = []
+
+        all_files = set(base_tree.keys()) | set(current_tree.keys()) | set(other_tree.keys())
+
+        for file in all_files:
+            base_sha = base_tree.get(file)
+            current_sha = current_tree.get(file)
+            other_sha = other_tree.get(file)
+
+            if current_sha == other_sha:
+                if current_sha:
+                    merged_tree[file] = current_sha
+            elif current_sha == base_sha:
+                merged_tree[file] = other_sha
+            elif other_sha == base_sha:
+                merged_tree[file] = current_sha
+            else:
+                conflicts.append(file)
+                merged_tree[file] = self.create_conflict_file(file, base_sha, current_sha, other_sha, branch_name)
+
+        if conflicts:
+            self.handle_merge_conflicts(conflicts, merged_tree)
+        else:
+            self.create_merge_commit(current_commit, other_commit, merged_tree, branch_name)
+
+    def handle_merge_conflicts(self, conflicts, merged_tree):
+        """
+        Handle merge conflicts by notifying the user and updating the working directory.
+
+        Args:
+            conflicts (list): List of files with conflicts.
+            merged_tree (dict): The merged tree structure.
+        """
+        print('Merge conflicts in files:')
+        for file in conflicts:
+            print(f' {file}')
+        print('Resolve conflicts and commit the results')
+        self.update_working_directory(merged_tree)
+
+    def create_merge_commit(self, current_commit, other_commit, merged_tree, branch_name):
+        """
+        Create a merge commit after a successful merge.
+
+        Args:
+            current_commit (str): The SHA-1 of the current branch's head commit.
+            other_commit (str): The SHA-1 of the other branch's head commit.
+            merged_tree (dict): The merged tree structure.
+            branch_name (str): The name of the branch being merged.
+        """
+        merge_commit_message = f"Merge branch '{branch_name}'"
+        merged_tree_sha = self.hash_object(json.dumps(merged_tree).encode(), 'tree')
+        merge_commit_data = {
+            'tree': merged_tree_sha,
+            'parents': [current_commit, other_commit],
+            'author': 'Simple Fangs User <user@example.com>',
+            'timestamp': datetime.now().isoformat(),
+            'message': merge_commit_message
+        }
+        merge_commit_sha = self.hash_object(json.dumps(merge_commit_data).encode(), 'commit')
+        self.update_ref('HEAD', merge_commit_sha)
+        print(f"Merged branch '{branch_name}' into {self.get_current_branch()}")
+        self.update_working_directory(merged_tree)
+
+    def get_tree(self, commit_sha):
+        """
+        Get the tree object associated with a commit.
+
+        Args:
+            commit_sha (str): The SHA-1 of the commit.
+
+        Returns:
+            dict: The tree structure of the commit.
+        """
+        commit_data = self.read_object(commit_sha, 'commit')
+        return self.read_object(commit_data['tree'], 'tree')
+
+    def create_conflict_file(self, file, base_sha, current_sha, other_sha, branch_name):
+        """
+        Create a conflict file with markers for manual resolution.
+
+        Args:
+            file (str): The name of the conflicting file.
+            base_sha (str): The SHA-1 of the base version.
+            current_sha (str): The SHA-1 of the current branch version.
+            other_sha (str): The SHA-1 of the other branch version.
+            branch_name (str): The name of the branch being merged.
+
+        Returns:
+            str: The SHA-1 of the created conflict file.
+        """
+        content = f"""<<<<<<< HEAD
+{self.read_object(current_sha, 'blob').decode() if current_sha else ''}
+=======
+{self.read_object(other_sha, 'blob').decode() if other_sha else ''}
+>>>>>>> {branch_name}
+"""
+        return self.hash_object(content.encode(), 'blob')
+   
