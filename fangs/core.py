@@ -546,18 +546,22 @@ class FANGS:
         Raises:
             ValueError: If not on a branch or if the specified branch doesn't exist.
         """
+        # Check if we're on a branch
         current_branch = self.get_current_branch()
         if not current_branch:
             raise ValueError('Not currently on any branch')
         
+        # Get the current and target commit SHAs
         current_commit = self.get_head_commit()
         other_commit = self.get_ref(f'refs/heads/{branch_name}')
         
         if not other_commit:
             raise ValueError(f'Branch {branch_name} does not exist')
 
+        # Find the common ancestor of the two branches
         base_commit = self.find_merge_base(current_commit, other_commit)
 
+        # Determine the type of merge required
         if base_commit == other_commit:
             print('Already up-to-date')
             return
@@ -574,8 +578,10 @@ class FANGS:
             target_commit (str): The SHA-1 of the commit to merge to.
             branch_name (str): The name of the branch being merged.
         """
+        # Update HEAD to point to the target commit
         self.update_ref('HEAD', target_commit)
         print(f'Fast-forwarded merge to {branch_name}')
+        # Update the working directory to match the target commit
         self.update_working_directory(self.get_tree(target_commit))
 
     def three_way_merge(self, current_commit, other_commit, base_commit, branch_name):
@@ -588,6 +594,7 @@ class FANGS:
             base_commit (str): The SHA-1 of the common ancestor commit.
             branch_name (str): The name of the branch being merged.
         """
+        # Get the tree objects for all three commits
         base_tree = self.get_tree(base_commit)
         current_tree = self.get_tree(current_commit)
         other_tree = self.get_tree(other_commit)
@@ -595,6 +602,7 @@ class FANGS:
         merged_tree = {}
         conflicts = []
 
+        # Get all unique files across all three trees
         all_files = set(base_tree.keys()) | set(current_tree.keys()) | set(other_tree.keys())
 
         for file in all_files:
@@ -602,14 +610,19 @@ class FANGS:
             current_sha = current_tree.get(file)
             other_sha = other_tree.get(file)
 
+            # Determine how to handle each file
             if current_sha == other_sha:
+                # File is the same in both branches or doesn't exist in one
                 if current_sha:
                     merged_tree[file] = current_sha
             elif current_sha == base_sha:
+                # File was not changed in current branch, use other branch version
                 merged_tree[file] = other_sha
             elif other_sha == base_sha:
+                # File was not changed in other branch, use current branch version
                 merged_tree[file] = current_sha
             else:
+                # Conflict: file changed in both branches
                 conflicts.append(file)
                 merged_tree[file] = self.create_conflict_file(file, base_sha, current_sha, other_sha, branch_name)
 
@@ -630,6 +643,7 @@ class FANGS:
         for file in conflicts:
             print(f' {file}')
         print('Resolve conflicts and commit the results')
+        # Update working directory with conflict markers
         self.update_working_directory(merged_tree)
 
     def create_merge_commit(self, current_commit, other_commit, merged_tree, branch_name):
@@ -643,7 +657,9 @@ class FANGS:
             branch_name (str): The name of the branch being merged.
         """
         merge_commit_message = f"Merge branch '{branch_name}'"
+        # Hash the merged tree structure
         merged_tree_sha = self.hash_object(json.dumps(merged_tree).encode(), 'tree')
+        # Create the merge commit data
         merge_commit_data = {
             'tree': merged_tree_sha,
             'parents': [current_commit, other_commit],
@@ -651,9 +667,12 @@ class FANGS:
             'timestamp': datetime.now().isoformat(),
             'message': merge_commit_message
         }
+        # Create the merge commit object
         merge_commit_sha = self.hash_object(json.dumps(merge_commit_data).encode(), 'commit')
+        # Update HEAD to point to the new merge commit
         self.update_ref('HEAD', merge_commit_sha)
         print(f"Merged branch '{branch_name}' into {self.get_current_branch()}")
+        # Update the working directory to reflect the merged state
         self.update_working_directory(merged_tree)
 
     def get_tree(self, commit_sha):
@@ -666,7 +685,9 @@ class FANGS:
         Returns:
             dict: The tree structure of the commit.
         """
+        # Read the commit object to get the tree SHA
         commit_data = self.read_object(commit_sha, 'commit')
+        # Read and return the tree object
         return self.read_object(commit_data['tree'], 'tree')
 
     def create_conflict_file(self, file, base_sha, current_sha, other_sha, branch_name):
@@ -683,11 +704,13 @@ class FANGS:
         Returns:
             str: The SHA-1 of the created conflict file.
         """
+        # Generate content with conflict markers
         content = f"""<<<<<<< HEAD
 {self.read_object(current_sha, 'blob').decode() if current_sha else ''}
 =======
 {self.read_object(other_sha, 'blob').decode() if other_sha else ''}
 >>>>>>> {branch_name}
 """
+        # Hash and store the conflict file content
         return self.hash_object(content.encode(), 'blob')
    
