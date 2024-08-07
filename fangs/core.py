@@ -471,42 +471,68 @@ class FANGS:
 
 
      def checkout(self, branch_name):
+        """
+        Switch to a different branch and update the working directory.
+
+        Args:
+            branch_name (str): The name of the branch to checkout.
+
+        Raises:
+            OSError: If there's an error reading or writing files.
+        """
         branch_ref = f'refs/heads/{branch_name}'
-        if not os.path.exists(os.path.join(self.git_dir, branch_ref)):
+        if not os.path.exists(os.path.join(self.FANGS_DIR, branch_ref)):
             print(f"Branch '{branch_name}' does not exist")
             return
         
-        # Update HEAD
-        with open(self.head_file, 'w') as f:
-            f.write(f'ref: {branch_ref}')
+        try:
+            # Update HEAD
+            with open(self.HEAD_FILE, 'w') as f:
+                f.write(f'ref: {branch_ref}')
         
-        # Get the commit that the branch points to
-        branch_commit = self.get_ref(branch_ref)
+            # Get the commit that the branch points to
+            branch_commit = self.get_ref(branch_ref)
         
-        # Read the tree from the commit
-        commit_data = self.read_object(branch_commit, 'commit')
-        tree_sha1 = commit_data['tree']
-        tree = self.read_object(tree_sha1, 'tree')
+            # Read the tree from the commit
+            commit_data = self.read_object(branch_commit, 'commit')
+            tree_sha1 = commit_data['tree']
+            tree = self.read_object(tree_sha1, 'tree')
         
-        # Update working directory
-        self.update_working_directory(tree)
+            # Update working directory
+            self.update_working_directory(tree)
         
-        print(f"Switched to branch '{branch_name}'")
+            print(f"Switched to branch '{branch_name}'")
+        except OSError as e:
+            print(f"Error during checkout: {e}")
+            # TODO: Consider adding rollback logic here
 
     def update_working_directory(self, tree):
-        # Remove all files in the working directory except .simplegit
-        for root, dirs, files in os.walk(self.repo_path, topdown=False):
-            if '.simplegit' in dirs:
-                dirs.remove('.simplegit')
-            for name in files:
-                os.remove(os.path.join(root, name))
-            for name in dirs:
-                os.rmdir(os.path.join(root, name))
+        """
+        Update the working directory to match the given tree.
 
-        # Write files from the tree to the working directory
-        for path, sha1 in tree.items():
-            file_path = os.path.join(self.repo_path, path)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'wb') as f:
-                f.write(self.read_object(sha1, 'blob'))
+        Args:
+            tree (dict): A dictionary representing the file structure.
+
+        Raises:
+            OSError: If there's an error manipulating files or directories.
+        """
+        try:
+            # Remove all files in the working directory except .fangs
+            for root, dirs, files in os.walk(self.repo_path, topdown=False):
+                if '.fangs' in dirs:
+                    dirs.remove('.fangs')
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
+
+            # Write files from the tree to the working directory
+            for path, sha1 in tree.items():
+                file_path = os.path.join(self.repo_path, path)
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                with open(file_path, 'wb') as f:
+                    f.write(self.read_object(sha1, 'blob'))
+        except OSError as e:
+            print(f"Error updating working directory: {e}")
+            # Consider adding rollback logic here
         
