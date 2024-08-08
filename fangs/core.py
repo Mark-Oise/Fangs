@@ -758,4 +758,181 @@ class FANGS:
 """
         # Hash and store the conflict file content
         return self.hash_object(content.encode(), 'blob')
+
+    def status(self):
+        """
+        Display the current status of the repository.
+
+        This method shows:
+        1. The current branch
+        2. Staged changes (files ready to be committed)
+        3. Unstaged changes (modified files not yet staged)
+        4. Untracked files (files not under version control)
+        """
+        # Get and display the current branch
+        current_branch = self.get_current_branch()
+        print(f'On branch {current_branch}')
+
+        # Get and display staged changes
+        staged_changes = self.get_staged_changes()
+        if staged_changes:
+            print("\nChanges to be committed:")
+            for file, status in staged_changes.items():
+                print(f"  {status}: {file}")
+
+        # Get and display unstaged changes
+        unstaged_changes = self.get_unstaged_changes()
+        if unstaged_changes:
+            print("\nChanges not staged for commit:")
+            for file, status in unstaged_changes.items():
+                print(f"  {status}: {file}")
+
+        # Get and display untracked files
+        untracked_files = self.get_untracked_files()
+        if untracked_files:
+            print("\nUntracked files:")
+            for file in untracked_files:
+                print(f"  {file}")
+
+    def get_staged_changes(self):
+        """
+        Get a dictionary of staged changes.
+
+        This method compares the current index with the HEAD tree to determine
+        which files have been staged for commit.
+
+        Returns:
+            dict: A dictionary where keys are file paths and values are their status
+                  ('new file', 'modified', or 'deleted').
+        """
+        staged_changes = {}
+        index_file = os.path.join(self.FANGS_DIR, 'index')
+
+        # If index doesn't exist, there are no staged changes
+        if not os.path.exists(index_file):
+            return staged_changes
+
+        # Get the tree of the current HEAD commit
+        head_tree = self.get_head_tree()
+
+        # Compare index with HEAD tree
+        with open(index_file, 'r') as f:
+            for line in f:
+                sha1, path = line.strip().split(' ', 1)
+                # If file is new or modified compared to HEAD, it's staged
+                if path not in head_tree or head_tree[path] != sha1:
+                    staged_changes[path] = 'new file' if path not in head_tree else 'modified'
+
+        # Check for deleted files (in HEAD but not in working directory)
+        for path in head_tree:
+            if path not in staged_changes and not os.path.exists(os.path.join(self.repo_path, path)):
+                staged_changes[path] = 'deleted'
+
+        return staged_changes
+
+    def get_unstaged_changes(self):
+        """
+        Get a dictionary of unstaged changes.
+
+        This method compares the working directory with the current index
+        to determine which files have been modified but not staged.
+
+        Returns:
+            dict: A dictionary where keys are file paths and values are their status
+                  ('modified', 'new file', or 'deleted').
+        """
+        unstaged_changes = {}
+        index_file = os.path.join(self.FANGS_DIR, 'index')
+
+        # If index doesn't exist, consider all files as unstaged
+        if not os.path.exists(index_file):
+            return self.get_untracked_files()
+
+        # Read the current index
+        with open(index_file, 'r') as f:
+            index = dict(line.strip().split(' ', 1) for line in f)
+
+        # Compare working directory with index
+        for root, _, files in os.walk(self.repo_path):
+            if '.fangs' in root:
+                continue  # Skip the .fangs directory
+            for file in files:
+                path = os.path.relpath(os.path.join(root, file), self.repo_path)
+                with open(os.path.join(root, file), 'rb') as f:
+                    content = f.read()
+                sha1 = self.hash_object(content, 'blob')
+                if path in index:
+                    if index[path] != sha1:
+                        unstaged_changes[path] = 'modified'
+                else:
+                    unstaged_changes[path] = 'new file'
+
+        # Check for deleted files (in index but not in working directory)
+        for path in index:
+            if not os.path.exists(os.path.join(self.repo_path, path)):
+                unstaged_changes[path] = 'deleted'
+
+        return unstaged_changes
+
+    def get_head_tree(self):
+        """
+        Get the tree object of the current HEAD commit.
+
+        This method retrieves the tree structure associated with the current
+        HEAD commit, which represents the last known good state of the repository.
+
+        Returns:
+            dict: A dictionary representing the tree structure of the HEAD commit,
+                  or an empty dict if there's no HEAD commit.
+        """
+        # Get the SHA-1 of the current HEAD commit
+        head_commit = self.get_head_commit()
+        if not head_commit:
+            return {}  # Return empty dict if there's no HEAD commit
+
+        # Read the commit object to get the tree SHA-1
+        commit_data = self.read_object(head_commit, 'commit')
+
+        # Read and return the tree object
+        return self.read_object(commit_data['tree'], 'tree')
+
+    def get_untracked_files(self):
+        """
+        Get a list of untracked files in the repository.
+
+        This method identifies files in the working directory that are not
+        tracked by FANGS (i.e., not in the index).
+
+        Returns:
+            list: A list of file paths that are not tracked.
+        """
+        untracked_files = []
+        index_file = os.path.join(self.FANGS_DIR, 'index')
+
+        # If index doesn't exist, all files are untracked
+        if not os.path.exists(index_file):
+            for root, _, files in os.walk(self.repo_path):
+                if '.fangs' in root:
+                    continue  # Skip the .fangs directory
+                for file in files:
+                    untracked_files.append(os.path.relpath(os.path.join(root, file), self.repo_path))
+            return untracked_files
+
+        # Read the current index
+        with open(index_file, 'r') as f:
+            index = dict(line.strip().split(' ', 1) for line in f)
+
+        # Check all files in the working directory
+        for root, _, files in os.walk(self.repo_path):
+            if '.fangs' in root:
+                continue  # Skip the .fangs directory
+            for file in files:
+                path = os.path.relpath(os.path.join(root, file), self.repo_path)
+                if path not in index:
+                    untracked_files.append(path)
+
+        return untracked_files
+
+
+
    
